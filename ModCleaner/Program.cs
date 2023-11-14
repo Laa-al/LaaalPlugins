@@ -23,7 +23,7 @@ void AutoClearFiles(string origin)
             try
             {
                 manager.AnalyseLocalFile(file);
-                Console.Write($"\r[Write] {count++} files");
+                Console.Write($"\r[Write] {++count} files");
             }
             catch (Exception e)
             {

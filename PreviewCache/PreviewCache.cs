@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using BepInEx;
 using HarmonyLib;
@@ -26,20 +27,27 @@ namespace PreviewCache
 
         private void Awake()
         {
-            string filepath = Path.Combine(Application.dataPath, CachePath, "preview_empty.cache");
-
-            if (File.Exists(filepath))
+            try
             {
-                using (FileStream stream = File.OpenRead(filepath))
-                using (BinaryReader reader = new BinaryReader(stream))
-                {
-                    int count = reader.ReadInt32();
+                string filepath = Path.Combine(Application.dataPath, CachePath, "preview_empty.cache");
 
-                    for (int i = 0; i < count; i++)
+                if (File.Exists(filepath))
+                {
+                    using (FileStream stream = File.OpenRead(filepath))
+                    using (BinaryReader reader = new BinaryReader(stream))
                     {
-                        EmptyTexPath.Add(reader.ReadString());
+                        int count = reader.ReadInt32();
+
+                        for (int i = 0; i < count; i++)
+                        {
+                            EmptyTexPath.Add(reader.ReadString());
+                        }
                     }
                 }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError(e);
             }
             
             Harmony.CreateAndPatchAll(typeof(Hooks));
