@@ -17,8 +17,8 @@ namespace ZipModUtilities.Data
         public string Guid { get; set; }
         public string FileName { get; set; }
         public string Version { get; set; }
-        [field:NonSerialized]
-        public Version VersionObj { get; set; }
+        [NonSerialized] 
+        private Version _version;
         public string Author { get; set; }
         public string DirectoryName { get; set; }
         public string Game { get; set; }
@@ -27,11 +27,11 @@ namespace ZipModUtilities.Data
 
         public Version GetVersion()
         {
-            if (VersionObj is null)
+            if (_version is null)
             {
                 try
                 {
-                    VersionObj = new Version(Version);
+                    _version = new Version(Version);
                 }
                 catch (Exception e)
                 {
@@ -39,7 +39,7 @@ namespace ZipModUtilities.Data
                 }
             }
 
-            return VersionObj;
+            return _version;
         }
 
         public void SetRemoteUri(string uri, DateTime updateLabel)

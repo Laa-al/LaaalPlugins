@@ -274,7 +274,7 @@ namespace ZipModUtilities.Data
 
                 string repeatPath = SharedConsts.GetRepeatPath(message);
 
-                if (targetMessage.VersionObj >= message.VersionObj)
+                if (targetMessage.GetVersion() >= message.GetVersion())
                 {
                     File.Move(filePath, repeatPath);
                     AddLocalMessage(targetMessage);
