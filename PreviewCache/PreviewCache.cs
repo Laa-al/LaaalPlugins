@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using BepInEx;
 using HarmonyLib;
+using ICSharpCode.SharpZipLib.Zip;
+using Sideloader;
 using UnityEngine;
 
 
@@ -18,12 +20,11 @@ namespace PreviewCache
         public const string PluginName = "PreviewCache";
 
         /// <summary> Plugin version </summary>
-        public const string Version = "0.0.2";
+        public const string Version = "0.0.3";
 
         public const string CachePath = "../temp/preview-cache";
 
         private static readonly Dictionary<string, Texture2D> Texture2Ds = new Dictionary<string, Texture2D>();
-        private static readonly HashSet<string> EmptyTexPath = new HashSet<string>();
 
         private void Awake()
         {
@@ -40,7 +41,26 @@ namespace PreviewCache
 
                         for (int i = 0; i < count; i++)
                         {
-                            EmptyTexPath.Add(reader.ReadString());
+                            Texture2Ds[reader.ReadString()] = null;
+                        }
+                    }
+                }
+                
+                filepath = Path.Combine(Application.dataPath, CachePath, "preview.cache");
+
+                if (File.Exists(filepath))
+                {
+                    using (FileStream stream = File.OpenRead(filepath))
+                    using (BinaryReader reader = new BinaryReader(stream))
+                    {
+                        int count = reader.ReadInt32();
+
+                        for (int i = 0; i < count; i++)
+                        {
+                            string path = reader.ReadString();
+                            TextureFormat format = (TextureFormat)reader.ReadByte();
+                            bool mipmap = reader.ReadBoolean();
+                            Texture2Ds[path] = GetTextureFromZipmod(path,format,mipmap);
                         }
                     }
                 }
@@ -63,16 +83,70 @@ namespace PreviewCache
                 Directory.CreateDirectory(directory);
             }
             
-            string filepath = Path.Combine(directory, "preview_empty.cache");
-            using (FileStream stream = File.OpenWrite(filepath))
-            using (BinaryWriter writer = new BinaryWriter(stream))
+            using (FileStream emptyStream = File.OpenWrite(Path.Combine(directory, "preview_empty.cache")))
+            using (BinaryWriter emptyWriter = new BinaryWriter(emptyStream)) 
+            using (FileStream textureStream = File.OpenWrite(Path.Combine(directory, "preview.cache")))
+            using (BinaryWriter textureWriter = new BinaryWriter(textureStream))
             {
-                writer.Write(EmptyTexPath.Count);
-
-                foreach (string s in EmptyTexPath)
+                int emptyCount = 0;
+                int textureCount = 0;
+                emptyWriter.Write(emptyCount);
+                textureWriter.Write(textureCount);
+                
+                foreach ((string path,Texture2D texture) in Texture2Ds)
                 {
-                    writer.Write(s);
+                    if (texture == null)
+                    {
+                        emptyWriter.Write(path);
+                        emptyCount++;
+                    }
+                    else
+                    {
+                        textureWriter.Write(path);
+                        textureWriter.Write((byte)texture.format);
+                        textureWriter.Write(texture.mipmapCount<0);
+                        textureCount++;
+                    }
                 }
+
+                emptyStream.Seek(0, SeekOrigin.Begin);
+                textureWriter.Seek(0, SeekOrigin.Begin);
+                emptyWriter.Write(emptyCount);
+                textureWriter.Write(textureCount);
+            }
+        }
+        
+        public static Texture2D GetTextureFromZipmod(string pngPath, TextureFormat format, bool mipmap)
+        {
+            if (!Sideloader.Sideloader.PngList.TryGetValue(pngPath, out ZipmodInfo zipmodInfo))
+            {
+                return null;
+            }
+
+            ZipFile zipFile = zipmodInfo.GetZipFile();
+            ZipEntry entry = zipFile.GetEntry(pngPath);
+
+            if (entry == null || entry.Size == 0)
+            {
+                return null;
+            }
+
+            using (Stream stream = zipFile.GetInputStream(entry))
+            {
+                byte[] buffer = new byte[entry.Size];
+                int _ = stream.Read(buffer, 0, (int)entry.Size);
+
+                Texture2D tex = new Texture2D(2, 2, format, mipmap);
+
+                tex.LoadImage(buffer);
+
+                if (pngPath.Contains("clamp"))
+                    tex.wrapMode = TextureWrapMode.Clamp;
+                else if (pngPath.Contains("repeat"))
+                    tex.wrapMode = TextureWrapMode.Repeat;
+
+                Texture2Ds[pngPath] = tex;
+                return tex;
             }
         }
     }
