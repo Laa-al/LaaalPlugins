@@ -39,7 +39,7 @@ namespace ZipModUtilities.Data
                     SharedConsts.TargetPath = config.TargetPath;
                 }
 
-                if (config.ThreadCount < 0)
+                if (config.ThreadCount <= 0)
                 {
                     config.ThreadCount = 4;
                 }

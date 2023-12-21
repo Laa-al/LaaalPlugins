@@ -33,6 +33,7 @@ foreach (ModMessage message in manager.GetRemoteList())
 
 if (config.UpdateMod)
 {
+    Console.WriteLine("Start Download!");
     foreach (List<ModMessage> list in manager.GetLocalList())
     {
         ModMessage local = list.FirstOrDefault(u => u.IsLocal);
@@ -49,6 +50,7 @@ if (config.UpdateMod)
             }
         }
     }
+    Console.WriteLine($"Finish add task: {downloadManager.TaskCount} tasks.");
 }
 
 while (Console.ReadKey().Key != ConsoleKey.Escape)

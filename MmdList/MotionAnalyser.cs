@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 
@@ -7,25 +8,29 @@ namespace MmdList
 {
     public class MotionAnalyser
     {
-        private readonly List<MotionDescriptor> _motionFiles = new();
-        private readonly List<MotionDescriptor> _morphFiles = new();
-        private readonly List<MotionDescriptor> _cameraFiles = new();
-        private readonly List<string> _musicFiles = new();
-        private readonly List<MotionAnalyser> _subAnalysers = new();
-        private readonly string _folderPath;
-        private readonly string _basePath;
-        private readonly string _danceName;
-        private int _dancerNum;
+        public List<MotionInfo> MotionFiles { get; } = new();
+        public List<MotionInfo> MorphFiles { get; } = new();
+        public List<MotionInfo> CameraFiles { get; } = new();
+        public List<string> MusicFiles { get; } = new();
+        public List<MotionAnalyser> SubAnalysers { get; } = new();
+        public string FolderPath { get; }
+        public string BasePath { get; }
+        public string DanceName { get; }
+        public int DancerNum { get; set; }
+        public bool IsMmd { get; set; }
 
-        public MotionAnalyser(string folderPath, string basePath, string danceName, int dancerNum)
+        public MotionAnalyser(bool isMmd,
+            string folderPath, string basePath,
+            string danceName, int dancerNum)
         {
-            _folderPath = folderPath;
-            _basePath = basePath;
-            _danceName = danceName;
-            _dancerNum = dancerNum;
+            IsMmd = isMmd;
+            FolderPath = folderPath;
+            BasePath = basePath;
+            DanceName = danceName;
+            DancerNum = dancerNum;
         }
 
-        private static MotionAnalyser CreateFromPath(string path, string rootPath)
+        public static MotionAnalyser CreateFromPath(string path, string rootPath)
         {
             string folderPath = path;
             string[] fileNames = Directory.GetFiles(folderPath);
@@ -43,13 +48,12 @@ namespace MmdList
             danceNameList.RemoveAll(u => u is '[' or ']');
             string danceName = string.Join(null, danceNameList);
 
-
             bool isMmd = fileNames.Any(u =>
                 u.EndsWith(".vmd", StringComparison.OrdinalIgnoreCase));
 
-            string basePath = isMmd ? folderPath[rootPath.Length..] : "";
+            string basePath = folderPath[rootPath.Length..];
 
-            MotionAnalyser analyser = new(folderPath, basePath, danceName, dancerNum);
+            MotionAnalyser analyser = new(isMmd, folderPath, basePath, danceName, dancerNum);
 
             if (isMmd)
             {
@@ -57,14 +61,13 @@ namespace MmdList
                 {
                     if (fileName.EndsWith(".wav"))
                     {
-                        analyser._musicFiles.Add(Path.GetFileName(fileName));
+                        analyser.MusicFiles.Add(Path.GetFileName(fileName));
                     }
                     else if (fileName.EndsWith(".vmd"))
                     {
                         try
                         {
-                            MotionDescriptor descriptor = new(fileName);
-                            analyser.AddDescriptor(descriptor);
+                            analyser.CreateAndAddInfo(fileName);
                         }
                         catch (Exception e)
                         {
@@ -73,169 +76,173 @@ namespace MmdList
                         }
                     }
                 }
+
+                analyser.MotionFiles.Sort((u, v) => v.Motion - u.Motion);
+                analyser.MorphFiles.Sort((u, v) => v.Morph - u.Morph);
+                analyser.CameraFiles.Sort((u, v) => v.Camera - u.Camera);
+
+                analyser.IsMmd =
+                    analyser.MusicFiles.Any() &&
+                    analyser.MotionFiles.Any(u => u.Motion > 0);
             }
             else
             {
                 string[] folderNames = Directory.GetDirectories(folderPath);
                 foreach (string folderName in folderNames)
                 {
-                    analyser._subAnalysers.Add(CreateFromPath(folderName, rootPath));
+                    analyser.SubAnalysers.Add(CreateFromPath(folderName, rootPath));
                 }
             }
-
-            analyser.SortFiles();
 
             return analyser;
         }
 
-        public void AddDescriptor(MotionDescriptor descriptor)
+        private void CreateAndAddInfo(string path)
         {
-            if (descriptor.Motion[0] > 0)
+            MotionInfo info = MotionInfo.Create(path);
+            if (info.Motion > 0)
             {
-                _motionFiles.Add(descriptor);
+                MotionFiles.Add(info);
             }
-            else if (descriptor.Motion[1] > 0)
+            else if (info.Morph > 0)
             {
-                _morphFiles.Add(descriptor);
+                MorphFiles.Add(info);
             }
-            else if (descriptor.Motion[2] > 0)
+            else if (info.Camera > 0)
             {
-                _cameraFiles.Add(descriptor);
+                CameraFiles.Add(info);
             }
         }
 
-        public void SortFiles()
+        private void DoRecursion([NotNull] Action<MotionAnalyser> action)
         {
-            _motionFiles.Sort((u, v) => v.Motion[0] - u.Motion[0]);
-            _morphFiles.Sort((u, v) => v.Motion[1] - u.Motion[1]);
-            _cameraFiles.Sort((u, v) => v.Motion[2] - u.Motion[2]);
+            if (SubAnalysers.Count > 0)
+            {
+                foreach (MotionAnalyser analyser in SubAnalysers)
+                {
+                    analyser.DoRecursion(action);
+                }
+            }
+
+            action.Invoke(this);
         }
 
         public void WriteList(StreamWriter sw)
         {
-            if (_subAnalysers.Count > 0)
+            if (!IsMmd) return;
+
+            sw.WriteLine($"[{DanceName}]");
+            sw.WriteLine($"basefolder={BasePath}\\");
+
+
+            MotionInfo[] motions = new MotionInfo[DancerNum];
+            MotionInfo[] morphs = new MotionInfo[DancerNum];
+
+            int minLen = Math.Min(MotionFiles.Count, DancerNum);
+
+            DancerNum = minLen;
+
+            for (int i = 0; i < minLen; i++)
             {
-                foreach (MotionAnalyser analyser in _subAnalysers)
+                motions[i] = MotionFiles[i];
+            }
+
+            minLen = Math.Min(MorphFiles.Count, DancerNum);
+            for (int i = 0; i < minLen; i++)
+            {
+                if (motions[i] is not null &&
+                    motions[i].Morph < MorphFiles[i].Morph)
                 {
-                    analyser.WriteList(sw);
+                    morphs[i] = MorphFiles[i];
                 }
             }
-            else if (_musicFiles.Any() &&
-                     _motionFiles.Any(u => u.Motion[0] > 0))
+
+            sw.WriteLine($"DancerNumber={DancerNum}");
+
+            for (int i = 0; i < DancerNum; i++)
             {
-                sw.WriteLine($"[{_danceName}]");
-                sw.WriteLine($"basefolder={_basePath}\\");
+                if (motions[i] is null) break;
 
-
-                MotionDescriptor[] motions = new MotionDescriptor[_dancerNum];
-                MotionDescriptor[] morphs = new MotionDescriptor[_dancerNum];
-
-                int minLen = Math.Min(_motionFiles.Count, _dancerNum);
-
-                _dancerNum = minLen;
-
-                for (int i = 0; i < minLen; i++)
+                sw.WriteLine($"Dancer{i}Motion={motions[i].FileName}");
+                if (morphs[i] is null)
                 {
-                    motions[i] = _motionFiles[i];
-                }
-
-                minLen = Math.Min(_morphFiles.Count, _dancerNum);
-                for (int i = 0; i < minLen; i++)
-                {
-                    if (motions[i] is not null &&
-                        motions[i].Motion[1] < _morphFiles[i].Motion[1])
+                    if (motions[i].Morph > 0)
                     {
-                        morphs[i] = _morphFiles[i];
+                        sw.WriteLine($"Dancer{i}Morph={motions[i].FileName}");
                     }
                 }
-
-                sw.WriteLine($"DancerNumber={_dancerNum}");
-
-                for (int i = 0; i < _dancerNum; i++)
+                else
                 {
-                    if (motions[i] is null) break;
-
-                    sw.WriteLine($"Dancer{i}Motion={motions[i].FileName}");
-                    if (morphs[i] is null)
-                    {
-                        if (motions[i].Motion[1] > 0)
-                        {
-                            sw.WriteLine($"Dancer{i}Morph={motions[i].FileName}");
-                        }
-                    }
-                    else
-                    {
-                        sw.WriteLine($"Dancer{i}Morph={morphs[i].FileName}");
-                    }
+                    sw.WriteLine($"Dancer{i}Morph={morphs[i].FileName}");
                 }
-
-                for (int i = 0; i < _cameraFiles.Count; i++)
-                {
-                    MotionDescriptor descriptor = _cameraFiles[i];
-                    sw.WriteLine($"Camera{i}={descriptor.FileName}");
-                }
-
-                sw.WriteLine($"Music={_musicFiles.First()}");
-                sw.WriteLine();
             }
+
+            for (int i = 0; i < CameraFiles.Count; i++)
+            {
+                MotionInfo info = CameraFiles[i];
+                sw.WriteLine($"Camera{i}={info.FileName}");
+            }
+
+            sw.WriteLine($"Music={MusicFiles.First()}");
+            sw.WriteLine();
         }
 
         public void SimplyFileName()
         {
-            if (_subAnalysers.Count > 0)
+            if (SubAnalysers.Count > 0)
             {
-                foreach (MotionAnalyser analyser in _subAnalysers)
+                foreach (MotionAnalyser analyser in SubAnalysers)
                 {
                     analyser.SimplyFileName();
                 }
             }
             else
             {
-                MoveFile(_motionFiles, "Motion");
-                MoveFile(_morphFiles, "Morph");
-                MoveFile(_cameraFiles, "Camera");
+                MoveFile(MotionFiles, "Motion");
+                MoveFile(MorphFiles, "Morph");
+                MoveFile(CameraFiles, "Camera");
 
-                for (int i = 0; i < _musicFiles.Count; i++)
+                for (int i = 0; i < MusicFiles.Count; i++)
                 {
                     string fileName = "Music" + i + "_.wav";
-                    string srcPath = Path.Combine(_folderPath, _musicFiles[i]);
-                    string dstPath = Path.Combine(_folderPath, fileName);
+                    string srcPath = Path.Combine(FolderPath, MusicFiles[i]);
+                    string dstPath = Path.Combine(FolderPath, fileName);
                     File.Move(srcPath, dstPath);
-                    _musicFiles[i] = fileName;
+                    MusicFiles[i] = fileName;
                 }
 
-                for (int i = 0; i < _musicFiles.Count; i++)
+                for (int i = 0; i < MusicFiles.Count; i++)
                 {
                     string fileName = "Music" + i + ".wav";
-                    string srcPath = Path.Combine(_folderPath, _musicFiles[i]);
-                    string dstPath = Path.Combine(_folderPath, fileName);
+                    string srcPath = Path.Combine(FolderPath, MusicFiles[i]);
+                    string dstPath = Path.Combine(FolderPath, fileName);
                     File.Move(srcPath, dstPath);
-                    _musicFiles[i] = fileName;
+                    MusicFiles[i] = fileName;
                 }
             }
 
             return;
 
-            void MoveFile(IReadOnlyList<MotionDescriptor> descriptors, string name)
+            void MoveFile(IReadOnlyList<MotionInfo> infos, string name)
             {
-                for (int i = 0; i < descriptors.Count; i++)
+                for (int i = 0; i < infos.Count; i++)
                 {
                     string fileName = name + i + "_.vmd";
-                    MotionDescriptor descriptor = descriptors[i];
-                    string srcPath = Path.Combine(_folderPath, descriptor.FileName);
-                    string dstPath = Path.Combine(_folderPath, fileName);
+                    MotionInfo info = infos[i];
+                    string srcPath = Path.Combine(FolderPath, info.FileName);
+                    string dstPath = Path.Combine(FolderPath, fileName);
                     File.Move(srcPath, dstPath);
-                    descriptor.FileName = fileName;
+                    info.FileName = fileName;
                 }
 
-                for (int i = 0; i < descriptors.Count; i++)
+                for (int i = 0; i < infos.Count; i++)
                 {
                     string fileName = name + i + ".vmd";
-                    MotionDescriptor descriptor = descriptors[i];
-                    string srcPath = Path.Combine(_folderPath, descriptor.FileName);
-                    string dstPath = Path.Combine(_folderPath, fileName);
+                    MotionInfo info = infos[i];
+                    string srcPath = Path.Combine(FolderPath, info.FileName);
+                    string dstPath = Path.Combine(FolderPath, fileName);
                     File.Move(srcPath, dstPath);
-                    descriptor.FileName = fileName;
+                    info.FileName = fileName;
                 }
             }
         }
@@ -246,15 +253,6 @@ namespace MmdList
             MotionAnalyser analyser = CreateFromPath(path, path);
 
             analyser.SimplyFileName();
-        }
-
-        public static void Analyse(string path, string fileName = "catalogue.txt")
-        {
-            MotionAnalyser analyser = CreateFromPath(path, path);
-            
-            using FileStream fileStream = File.OpenWrite(Path.Combine(path, fileName));
-            using StreamWriter writer = new(fileStream);
-            analyser.WriteList(writer);
         }
     }
 }

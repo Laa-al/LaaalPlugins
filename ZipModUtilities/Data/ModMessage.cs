@@ -31,11 +31,15 @@ namespace ZipModUtilities.Data
             {
                 try
                 {
+                    if (Version.StartsWith("v", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Version = Version[1..];
+                    }
                     _version = new Version(Version);
                 }
-                catch (Exception e)
+                catch (Exception)
                 {
-                    Console.WriteLine(e);
+                    _version = new Version();
                 }
             }
 

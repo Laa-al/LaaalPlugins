@@ -40,6 +40,8 @@ namespace ZipModUtilities.ModDownload
             }
         }
 
+        public int TaskCount => _totalTaskCount;
+
         public class Downloader : IDisposable
         {
             private readonly DownloadManager _manager;

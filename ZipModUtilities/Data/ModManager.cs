@@ -132,34 +132,45 @@ namespace ZipModUtilities.Data
                 return true;
             }
 
-            if (_ic.FavoriteAuthors.Contains(message.Author) ||
-                _ic.FavoriteAuthors.Contains(message.DirectoryName))
+            if (message.Author is not null)
             {
-                return true;
+                if (_ic.FavoriteAuthors.Any(
+                        key => message.Author
+                            .Contains(key,StringComparison.OrdinalIgnoreCase)))
+                {
+                    return true;
+                }
             }
 
             if (message.PathOrUri is not null)
             {
-                for (int i = 0; i < _ic.FavoriteKeys.Length; i++)
+                if (_ic.FavoriteKeys.Any(
+                        key => message.PathOrUri
+                            .Contains(key,StringComparison.OrdinalIgnoreCase)))
                 {
-                    string key = _ic.FavoriteKeys[i];
-                    if (message.PathOrUri.Contains(key))
-                    {
-                        return true;
-                    }
+                    return true;
                 }
 
-                for (int i = 0; i < _ic.IgnoredKeys.Length; i++)
+                if (_ic.IgnoredKeys.Any(
+                        key => message.PathOrUri
+                            .Contains(key,StringComparison.OrdinalIgnoreCase)))
                 {
-                    string key = _ic.IgnoredKeys[i];
-                    if (message.PathOrUri.Contains(key))
-                    {
-                        return false;
-                    }
+                    return false;
                 }
             }
             
-            if (message.Game == "AI Girl")
+            if (message.Author is not null)
+            {
+                if (_ic.IgnoredAuthors.Any(
+                        key => message.Author
+                            .Contains(key,StringComparison.OrdinalIgnoreCase)))
+                {
+                    return false;
+                }
+            }
+            
+            if (!string.IsNullOrWhiteSpace(message.Game) &&
+                message.Game != "Honey Select 2")
             {
                 return false;
             }
@@ -263,6 +274,11 @@ namespace ZipModUtilities.Data
                 message.DirectoryName,
                 message.FileName);
 
+            if (new Uri(targetPath) == new Uri(filePath))
+            {
+                return message;
+            }
+
             if (File.Exists(targetPath))
             {
                 ModMessage targetMessage = new()
@@ -323,9 +339,9 @@ namespace ZipModUtilities.Data
 
         public class IgnoreConfig
         {
-            public HashSet<string> IgnoredAuthors { get; set; }
+            public string[] IgnoredAuthors { get; set; }
             public string[] IgnoredKeys { get; set; }
-            public HashSet<string> FavoriteAuthors { get; set; }
+            public string[] FavoriteAuthors { get; set; }
             public string[] FavoriteKeys { get; set; }
         }
     }
